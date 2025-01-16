@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import recall_score, precision_score, f1_score, confusion_matrix, accuracy_score
+from training_dynamics import train_model_with_dynamics, save_training_dynamics
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -30,7 +31,7 @@ BEST_THRESHOLDS = {}  # To store the optimized thresholds
 
 torch.set_num_threads(NUM_WORKERS)
 
-train = pd.read_csv('public_data/train/track_a/eng.csv')
+train = pd.read_csv('public_data_dev/track_a/train/eng.csv')
 
 # Split the data (80% training, 20% validation)
 train_split, val_split = train_test_split(
@@ -41,7 +42,8 @@ train_split, val_split = train_test_split(
 )
 
 class EmotionDataset(Dataset):
-    def __init__(self, texts, labels, tokenizer, max_length=128):
+    def __init__(self, ids, texts, labels, tokenizer, max_length=128):
+        self.ids = ids
         self.texts = texts
         self.labels = labels
         self.tokenizer = tokenizer
@@ -61,6 +63,7 @@ class EmotionDataset(Dataset):
             return_tensors="pt",
         )
         return {
+            "id": self.ids[idx],
             "input_ids": encoding["input_ids"].squeeze(0),
             "attention_mask": encoding["attention_mask"].squeeze(0),
             "labels": torch.tensor(label, dtype=torch.float),
@@ -194,8 +197,10 @@ def evaluate_predictions(y_true, y_pred, emotion, output_file):
 
 def main():
     predictions = {}
-    output_file = "results_summary.txt"
-
+    output_file = "output_files/results_summary.txt"
+    
+    os.makedirs("cart_output_dir", exist_ok=True) #to ensure output file from training_dynamics is saved properly
+    
     if os.path.exists(output_file):
         os.remove(output_file)
 
@@ -204,27 +209,34 @@ def main():
     for emotion in EMOTIONS:
         print(f"\nProcessing emotion: {emotion}")
 
-        train_texts, train_labels = train_split["text"].tolist(), train_split[emotion].values
-        val_texts, val_labels = val_split["text"].tolist(), val_split[emotion].values
-        val_ids = val_split["id"].tolist()
+        train_ids, train_texts, train_labels = train_split["id"].tolist(), train_split["text"].tolist(), train_split[emotion].values
+        val_ids, val_texts, val_labels = val_split["id"].tolist(), val_split["text"].tolist(), val_split[emotion].values
 
         tokenizer, model = initialize_model_and_tokenizer()
 
-        train_dataset = EmotionDataset(train_texts, train_labels, tokenizer)
-        val_dataset = EmotionDataset(val_texts, val_labels, tokenizer)
+        train_dataset = EmotionDataset(train_ids, train_texts, train_labels, tokenizer)
+        val_dataset = EmotionDataset(val_ids, val_texts, val_labels, tokenizer)
 
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
 
         print(f"{emotion}")
-        model = train_model(model, train_loader, val_loader, DEVICE, EPOCHS)
+        #model = train_model(model, train_loader, val_loader, DEVICE, EPOCHS)
+        
+        # implemeting the concept from cartography paper from training_dynamics.py and saving it
+        model, training_dynamics = train_model_with_dynamics(model, train_loader, val_loader, DEVICE, EPOCHS)
+        
+        # making sure logits and gold from training_dynamics data is populated correctly
+        for instance_id, data in training_dynamics.items():
+            assert "logits" in data and "gold" in data, f"Missing data/gold data - {instance_id}"
 
+        save_training_dynamics("cart_output_dir", training_dynamics)
+        
         y_probs, y_true = get_predictions(val_loader, model, DEVICE)
         best_threshold = optimize_thresholds(y_true, y_probs)
         BEST_THRESHOLDS[emotion] = best_threshold
 
         y_pred = (y_probs > best_threshold).astype(int)
-
         predictions[emotion] = y_pred
 
         evaluate_predictions(y_true, y_pred, emotion, output_file)
@@ -233,7 +245,7 @@ def main():
             final_predictions["id"] = val_ids
         final_predictions[emotion] = y_pred
 
-    output_csv_file = "train_pred_eng_a.csv"
+    output_csv_file = "output_files/train_pred_eng_a.csv"
     final_predictions.to_csv(output_csv_file, index=False)
     print(f"\nPredictions saved to '{output_csv_file}'.")
 
