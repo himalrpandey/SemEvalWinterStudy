@@ -9,26 +9,19 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 import os
 
-#class_weights
-
-EMOTIONS = ['Anger', 'Disgust', 'Fear', 'Joy', 'Sadness', 'Surprise']
+EMOTIONS = ['anger', 'fear', 'joy', 'sadness', 'surprise']
 #Threshold proportional to positive labeling in dataset
-#THRESHOLDS_ENG = {'Joy': 0.24, 'Anger': 0.12, 'Sadness': 0.32, 'Surprise': 0.30, 'Fear': 0.58}
-THRESHOLDS_RUS = {'Disgust': 0.1, 'Joy': 0.21, 'Anger': 0.2, 'Sadness': 0.32, 'Surprise': 0.13, 'Fear': 0.16}
+THRESHOLDS_ENG = {'joy': 0.24, 'anger': 0.12, 'sadness': 0.32, 'surprise': 0.30, 'fear': 0.58}
 BATCH_SIZE = 32
-EPOCHS = 30
+EPOCHS = 20
 NUM_WORKERS = 1  # Number of workers for DataLoader and gpus
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-EARLY_STOPPING_PATIENCE = 5
+EARLY_STOPPING_PATIENCE = 20
 
 torch.set_num_threads(NUM_WORKERS) # Set the number of threads for PyTorch DataLoader
 
-#train_eng = pd.read_csv('public_data/train/track_a/eng.csv')
-#dev_eng = pd.read_csv('public_data/dev/track_a/eng_a.csv')
-
-#currently set to read rus_a data and predict rus_a dev
-train_rus = pd.read_csv('public_data/train/track_a/rus.csv')
-dev_rus = pd.read_csv('public_data/dev/track_a/rus_a.csv')
+train_eng = pd.read_csv('public_data_dev/track_a/train/eng.csv')
+dev_eng = pd.read_csv('public_data_dev/track_a/dev/eng.csv')
 
 class EmotionDataset(Dataset):
     """
@@ -66,9 +59,9 @@ class EmotionDataset(Dataset):
 This function initializes the model and tokenizer. 
 """
 def initialize_model_and_tokenizer():
-    tokenizer = AutoTokenizer.from_pretrained("distilbert-base-multilingual-cased")
+    tokenizer = AutoTokenizer.from_pretrained("distilbert-base-cased")
     model = AutoModelForSequenceClassification.from_pretrained(
-        "distilbert-base-multilingual-cased", num_labels=1
+        "distilbert-base-cased", num_labels=1
     )
     return tokenizer, model
 
@@ -160,13 +153,13 @@ The main function to train the model and get predictions.
 """
 def main():
     final_predictions = pd.DataFrame()
-    final_predictions["id"] = dev_rus["id"]
+    final_predictions["id"] = dev_eng["id"]
 
     for emotion in EMOTIONS:
         print(f"\n{emotion}")
 
-        train_texts, train_labels = train_rus["text"].tolist(), train_rus[emotion].values
-        dev_texts = dev_rus["text"].tolist()
+        train_texts, train_labels = train_eng["text"].tolist(), train_eng[emotion].values
+        dev_texts = dev_eng["text"].tolist()
 
         tokenizer, model = initialize_model_and_tokenizer()
 
@@ -180,14 +173,12 @@ def main():
 
         y_probs = get_predictions(dev_loader, model, DEVICE)
 
-        threshold = THRESHOLDS_RUS[emotion]
+        threshold = THRESHOLDS_ENG[emotion]
         y_pred = (y_probs > threshold).astype(int)
         final_predictions[emotion] = y_pred
 
     # Save predictions the format for the comp
-    #output_csv_file = "pred_eng_a.csv"
-    #currently set to save predictions for rus_a
-    output_csv_file = "pred_rus_a.csv"
+    output_csv_file = "pred_eng_a.csv"
     final_predictions.to_csv(output_csv_file, index=False)
     print(f"\nPredictions saved to {output_csv_file}")
 

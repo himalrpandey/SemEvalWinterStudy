@@ -21,22 +21,22 @@ The predictions are saved to a CSV file along with the evaluation metrics.
 It was used to validate the model before testing the dev_emotion_classifiers.py and MultiLing_train_emotion_classifiers.py scripts.
 """
 
-EMOTIONS = ['Anger', 'Fear', 'Joy', 'Sadness', 'Surprise']
-BATCH_SIZE = 16
+EMOTIONS = ['anger', 'fear', 'joy', 'sadness', 'surprise']
+BATCH_SIZE = 32
 EPOCHS = 20
-NUM_WORKERS = 1  # Number of workers for DataLoader gpus
+NUM_WORKERS = 2  # Number of workers for DataLoader gpus
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-EARLY_STOPPING_PATIENCE = 5
+EARLY_STOPPING_PATIENCE = 10
 BEST_THRESHOLDS = {}  # To store the optimized thresholds
 
 torch.set_num_threads(NUM_WORKERS)
 
 train = pd.read_csv('public_data_dev/track_a/train/eng.csv')
 
-# Split the data (80% training, 20% validation)
+# Split the data (75% training, 25% validation)
 train_split, val_split = train_test_split(
     train,
-    test_size=0.2,
+    test_size=0.25,
     random_state=42,
     stratify=train[EMOTIONS].values.sum(axis=1)
 )
@@ -77,7 +77,7 @@ def initialize_model_and_tokenizer():
     return tokenizer, model
 
 def train_model(model, train_loader, val_loader, device, epochs, patience=EARLY_STOPPING_PATIENCE, accumulation_steps=1):
-    optimizer = AdamW(model.parameters(), lr=5e-5)
+    optimizer = AdamW(model.parameters(), lr=1e-5)
     criterion = nn.BCEWithLogitsLoss()
     model.to(device)
 
@@ -230,7 +230,8 @@ def main():
         for instance_id, data in training_dynamics.items():
             assert "logits" in data and "gold" in data, f"Missing data/gold data - {instance_id}"
 
-        save_training_dynamics("cart_output_dir", training_dynamics)
+        filename = f"training_dynamics_epoch_{emotion}.jsonl"
+        save_training_dynamics("cart_output_dir", training_dynamics, filename=filename)
         
         y_probs, y_true = get_predictions(val_loader, model, DEVICE)
         best_threshold = optimize_thresholds(y_true, y_probs)

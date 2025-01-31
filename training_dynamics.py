@@ -17,7 +17,7 @@ def train_model_with_dynamics(
     best_model = None
 
     # Training dynamics storage
-    training_dynamics = {i: {"logits": [], "gold": None} for i in range(len(train_loader.dataset))}
+    training_dynamics = {}
 
     for epoch in range(epochs):
         model.train()
@@ -38,6 +38,8 @@ def train_model_with_dynamics(
             # Save logits and labels for training dynamics
             logits = outputs.logits.detach().cpu().numpy()
             for idx, logit, gold in zip(ids, logits, labels.cpu().numpy()):
+                if idx not in training_dynamics:
+                    training_dynamics[idx] = {"logits": [], "gold": None}
                 training_dynamics[idx]["logits"].append(logit.tolist())
                 training_dynamics[idx]["gold"] = gold.tolist()
 
